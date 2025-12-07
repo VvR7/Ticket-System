@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>车票查询 - 22306订票系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="/" class="navbar-logo">22306</a>
+            <ul class="navbar-menu">
+                <li><a href="/">首页</a></li>
+                <li><a href="/search">车票查询</a></li>
+                <li><a href="/my_orders">我的订单</a></li>
+                <li><a href="/admin" style="display:none;">管理后台</a></li>
+            </ul>
+            <div class="navbar-user" id="user-info"></div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="card">
+            <div class="card-header">车票查询</div>
+            <form id="search-form">
+                <div class="row">
+                    <div class="col-3">
+                        <div class="form-group">
+                            <label>出发城市</label>
+                            <select class="form-control" id="start_city">
+                                <option value="">全部</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="form-group">
+                            <label>到达城市</label>
+                            <select class="form-control" id="end_city">
+                                <option value="">全部</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="form-group">
+                            <label>出发日期</label>
+                            <input type="date" class="form-control" id="departure_date">
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="form-group">
+                            <label>车次号</label>
+                            <input type="text" class="form-control" id="schedule_no" placeholder="如: G1">
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">查询</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <div class="card-header">查询结果</div>
+            <div id="results-container">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>正在加载当日车次...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/common.js"></script>
+    <script>
+        // 加载城市列表
+        async function loadCities() {
+            const result = await apiRequest(`${API_BASE}/ticket/cities`);
+            if (result.success) {
+                const cities = result.cities;
+                const startCitySelect = document.getElementById('start_city');
+                const endCitySelect = document.getElementById('end_city');
+                
+                cities.forEach(city => {
+                    const option1 = document.createElement('option');
+                    option1.value = city.city;
+                    option1.textContent = `${city.city} (${city.province})`;
+                    startCitySelect.appendChild(option1);
+                    
+                    const option2 = document.createElement('option');
+                    option2.value = city.city;
+                    option2.textContent = `${city.city} (${city.province})`;
+                    endCitySelect.appendChild(option2);
+                });
+
+                // 从URL参数设置默认值
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('start_city')) {
+                    startCitySelect.value = urlParams.get('start_city');
+                }
+                if (urlParams.get('end_city')) {
+                    endCitySelect.value = urlParams.get('end_city');
+                }
+                if (urlParams.get('date')) {
+                    document.getElementById('departure_date').value = urlParams.get('date');
+                }
+
+                // 如果有URL参数，会在DOMContentLoaded中统一处理
+            }
+        }
+
+        // 查询班次
+        async function searchSchedules() {
+            const startCity = document.getElementById('start_city').value;
+            const endCity = document.getElementById('end_city').value;
+            const date = document.getElementById('departure_date').value;
+            const scheduleNo = document.getElementById('schedule_no').value;
+
+            const params = new URLSearchParams();
+            if (startCity) params.append('start_city', startCity);
+            if (endCity) params.append('end_city', endCity);
+            if (date) params.append('date', date);
+            if (scheduleNo) params.append('schedule_no', scheduleNo);
+
+            const resultsContainer = document.getElementById('results-container');
+            resultsContainer.innerHTML = '<div class="loading"><div class="spinner"></div><p>查询中...</p></div>';
+
+            const result = await apiRequest(`${API_BASE}/ticket/search?${params.toString()}`);
+
+            if (result.success) {
+                const schedules = result.schedules;
+
+                if (schedules.length === 0) {
+                    resultsContainer.innerHTML = '<div class="empty-state"><p>未找到符合条件的班次</p></div>';
+                    return;
+                }
+
+                let html = '<table class="table"><thead><tr>';
+                html += '<th>车次</th><th>线路</th><th>出发站</th><th>到达站</th>';
+                html += '<th>发车时间</th><th>到达时间</th><th>票价</th><th>余票</th><th>状态</th><th>操作</th>';
+                html += '</tr></thead><tbody>';
+
+                schedules.forEach(schedule => {
+                    html += '<tr>';
+                    html += `<td><strong>${schedule.schedule_no}</strong></td>`;
+                    html += `<td>${schedule.route_name}</td>`;
+                    html += `<td>${schedule.start_station}<br><small>${schedule.start_city}</small></td>`;
+                    html += `<td>${schedule.end_station}<br><small>${schedule.end_city}</small></td>`;
+                    html += `<td>${formatDate(schedule.departure_date)}<br>${formatTime(schedule.departure_time)}</td>`;
+                    html += `<td>${formatTime(schedule.arrival_time)}</td>`;
+                    html += `<td><strong>¥${schedule.base_price}</strong></td>`;
+                    html += `<td>${schedule.available_seats}</td>`;
+                    html += `<td>${getStatusBadge(schedule.status)}`;
+                    if (schedule.delay_minutes > 0) {
+                        html += `<br><small>延误${schedule.delay_minutes}分钟</small>`;
+                    }
+                    html += '</td>';
+                    html += `<td>`;
+                    if (schedule.available_seats > 0 && schedule.status === 'normal') {
+                        html += `<a href="/booking/${schedule.schedule_id}" class="btn btn-primary">预订</a>`;
+                    } else {
+                        html += '<button class="btn btn-secondary" disabled>不可预订</button>';
+                    }
+                    html += '</td>';
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                resultsContainer.innerHTML = html;
+            } else {
+                resultsContainer.innerHTML = `<div class="alert alert-danger">${result.message || '查询失败'}</div>`;
+            }
+        }
+
+        // 表单提交
+        document.getElementById('search-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            searchSchedules();
+        });
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 设置默认日期为今天
+            if (!document.getElementById('departure_date').value) {
+                document.getElementById('departure_date').valueAsDate = new Date();
+            }
+            
+            // 加载城市列表
+            await loadCities();
+            
+            // 自动查询车次（无论是否有URL参数）
+            // - 有参数：根据参数查询
+            // - 无参数：查询当日所有车次
+            searchSchedules();
+        });
+    </script>
+</body>
+</html>
+

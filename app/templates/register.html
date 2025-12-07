@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 - 22306订票系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .register-container {
+            max-width: 500px;
+            margin: 80px auto;
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="/" class="navbar-logo">22306</a>
+            <ul class="navbar-menu">
+                <li><a href="/">首页</a></li>
+                <li><a href="/search">车票查询</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="register-container">
+        <div class="card">
+            <div class="card-header text-center">用户注册</div>
+            <form id="register-form">
+                <div class="form-group">
+                    <label>用户名 *</label>
+                    <input type="text" class="form-control" id="username" required 
+                           placeholder="请输入用户名">
+                </div>
+                <div class="form-group">
+                    <label>密码 *</label>
+                    <input type="password" class="form-control" id="password" required 
+                           placeholder="请输入密码">
+                </div>
+                <div class="form-group">
+                    <label>确认密码 *</label>
+                    <input type="password" class="form-control" id="confirm_password" required 
+                           placeholder="请再次输入密码">
+                </div>
+                <div class="form-group">
+                    <label>真实姓名 *</label>
+                    <input type="text" class="form-control" id="real_name" required 
+                           placeholder="请输入真实姓名">
+                </div>
+                <div class="form-group">
+                    <label>安全问题 *</label>
+                    <input type="text" class="form-control" id="security_question" required 
+                           placeholder="例如：你的小学叫什么？">
+                </div>
+                <div class="form-group">
+                    <label>安全问题答案 *</label>
+                    <input type="text" class="form-control" id="security_answer" required 
+                           placeholder="请输入答案">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">注册</button>
+                <div class="mt-2 text-center">
+                    <a href="/login">已有账号？立即登录</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/js/common.js"></script>
+    <script>
+        document.getElementById('register-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirm_password').value;
+            const realName = document.getElementById('real_name').value;
+            const securityQuestion = document.getElementById('security_question').value;
+            const securityAnswer = document.getElementById('security_answer').value;
+            
+            // 验证
+            if (!username || !password || !realName || !securityQuestion || !securityAnswer) {
+                showMessage('请填写所有必填项', 'warning');
+                return;
+            }
+            
+            if (password !== confirmPassword) {
+                showMessage('两次密码输入不一致', 'warning');
+                return;
+            }
+            
+            if (password.length < 6) {
+                showMessage('密码长度至少6位', 'warning');
+                return;
+            }
+            
+            const result = await apiRequest(`${API_BASE}/auth/register`, 'POST', {
+                username,
+                password,
+                real_name: realName,
+                security_question: securityQuestion,
+                security_answer: securityAnswer
+            });
+            
+            if (result.success) {
+                showMessage('注册成功！请登录', 'success');
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 1500);
+            } else {
+                showMessage(result.message || '注册失败', 'danger');
+            }
+        });
+    </script>
+</body>
+</html>
+

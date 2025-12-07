@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>车票预订 - 22306订票系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="/" class="navbar-logo">22306</a>
+            <ul class="navbar-menu">
+                <li><a href="/">首页</a></li>
+                <li><a href="/search">车票查询</a></li>
+                <li><a href="/my_orders">我的订单</a></li>
+                <li><a href="/admin" style="display:none;">管理后台</a></li>
+            </ul>
+            <div class="navbar-user" id="user-info"></div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- 班次信息 -->
+        <div class="card">
+            <div class="card-header">班次信息</div>
+            <div id="schedule-info">
+                <div class="loading"><div class="spinner"></div></div>
+            </div>
+        </div>
+
+        <!-- 座位选择 -->
+        <div class="card">
+            <div class="card-header">选择座位</div>
+            <div id="seat-selection">
+                <div class="loading"><div class="spinner"></div></div>
+            </div>
+        </div>
+
+        <!-- 乘客信息 -->
+        <div class="card">
+            <div class="card-header">
+                乘客信息
+                <small style="color:#666; font-weight:normal; margin-left:10px;">
+                    （注意：同一车次每个身份证号只能订一张票）
+                </small>
+            </div>
+            <div id="passenger-forms">
+                <p class="text-center">请先选择座位</p>
+            </div>
+        </div>
+
+        <!-- 提交订单 -->
+        <div class="card">
+            <button id="submit-btn" class="btn btn-primary btn-block" disabled onclick="submitOrder()">
+                确认预订
+            </button>
+        </div>
+    </div>
+
+    <script src="/static/js/common.js"></script>
+    <script>
+        // 从URL获取schedule_id，避免模板语法在编辑器中报错
+        const scheduleId = parseInt(window.location.pathname.split('/').pop());
+        let selectedSeats = [];
+        let scheduleInfo = null;
+
+        // 加载班次信息
+        async function loadScheduleInfo() {
+            const result = await apiRequest(`${API_BASE}/ticket/schedule/${scheduleId}`);
+            
+            if (result.success && result.schedule) {
+                scheduleInfo = result.schedule;
+                const schedule = result.schedule;
+                
+                let html = `
+                    <div class="row">
+                        <div class="col-3">
+                            <h4>班次号</h4>
+                            <p class="text-lg">${schedule.schedule_no}</p>
+                        </div>
+                        <div class="col-3">
+                            <h4>出发</h4>
+                            <p>${schedule.start_station}</p>
+                            <p class="text-muted">${schedule.departure_date} ${schedule.departure_time}</p>
+                        </div>
+                        <div class="col-3">
+                            <h4>到达</h4>
+                            <p>${schedule.end_station}</p>
+                            <p class="text-muted">${schedule.arrival_time}</p>
+                        </div>
+                        <div class="col-3">
+                            <h4>票价</h4>
+                            <p class="text-lg" style="color:#667eea;">¥${schedule.base_price}</p>
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-3">
+                            <small>线路：${schedule.route_name}</small>
+                        </div>
+                        <div class="col-3">
+                            <small>类型：${schedule.route_type === 'train' ? '火车' : '客车'}</small>
+                        </div>
+                        <div class="col-3">
+                            <small>状态：${getStatusBadge(schedule.status)}</small>
+                        </div>
+                        <div class="col-3">
+                            <small>余票：${schedule.available_seats}张</small>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('schedule-info').innerHTML = html;
+            } else {
+                document.getElementById('schedule-info').innerHTML = 
+                    `<div class="alert alert-danger">${result.message || '加载班次信息失败'}</div>`;
+            }
+        }
+
+        // 加载座位信息
+        async function loadSeats() {
+            const result = await apiRequest(`${API_BASE}/ticket/schedule/${scheduleId}/seats`);
+            
+            if (result.success) {
+                const seats = result.seats;
+                let html = '<div class="seat-map">';
+                
+                seats.forEach(seat => {
+                    const status = seat.seat_status;
+                    const disabled = status === 'occupied' ? 'disabled' : '';
+                    html += `<div class="seat ${status}" data-seat-id="${seat.seat_id}" 
+                             data-seat-no="${seat.seat_no}" data-seat-type="${seat.seat_type}"
+                             onclick="toggleSeat(this, ${status !== 'occupied'})">`;
+                    html += `${seat.carriage_no ? seat.carriage_no + '-' : ''}${seat.seat_no}`;
+                    html += `<br><small>${seat.seat_type}</small>`;
+                    html += '</div>';
+                });
+                
+                html += '</div>';
+                html += '<div class="mt-2">';
+                html += '<span class="badge badge-success">可选</span> ';
+                html += '<span class="badge badge-danger">已售</span> ';
+                html += '<span class="badge" style="background:#667eea;">已选</span>';
+                html += '</div>';
+                
+                document.getElementById('seat-selection').innerHTML = html;
+            } else {
+                document.getElementById('seat-selection').innerHTML = 
+                    `<div class="alert alert-danger">${result.message || '加载失败'}</div>`;
+            }
+        }
+
+        // 切换座位选择
+        function toggleSeat(element, available) {
+            if (!available) return;
+            
+            const seatId = parseInt(element.dataset.seatId);
+            const seatNo = element.dataset.seatNo;
+            const seatType = element.dataset.seatType;
+            
+            if (element.classList.contains('selected')) {
+                // 取消选择
+                element.classList.remove('selected');
+                element.classList.add('available');
+                selectedSeats = selectedSeats.filter(s => s.seat_id !== seatId);
+            } else {
+                // 选择座位
+                element.classList.remove('available');
+                element.classList.add('selected');
+                selectedSeats.push({ seat_id: seatId, seat_no: seatNo, seat_type: seatType });
+            }
+            
+            updatePassengerForms();
+        }
+
+        // 更新乘客表单
+        function updatePassengerForms() {
+            if (selectedSeats.length === 0) {
+                document.getElementById('passenger-forms').innerHTML = 
+                    '<p class="text-center">请先选择座位</p>';
+                document.getElementById('submit-btn').disabled = true;
+                return;
+            }
+            
+            let html = '';
+            selectedSeats.forEach((seat, index) => {
+                html += `<div class="card" style="background:#f9f9f9;">`;
+                html += `<h4>乘客 ${index + 1} - 座位: ${seat.seat_no}</h4>`;
+                html += `<div class="row">`;
+                html += `<div class="col-2">`;
+                html += `<div class="form-group">`;
+                html += `<label>姓名 *</label>`;
+                html += `<input type="text" class="form-control passenger-name" required>`;
+                html += `</div>`;
+                html += `</div>`;
+                html += `<div class="col-2">`;
+                html += `<div class="form-group">`;
+                html += `<label>身份证号 *</label>`;
+                html += `<input type="text" class="form-control passenger-id" 
+                         pattern="[0-9]{17}[0-9Xx]" maxlength="18" required>`;
+                html += `</div>`;
+                html += `</div>`;
+                html += `</div>`;
+                html += `</div>`;
+            });
+            
+            document.getElementById('passenger-forms').innerHTML = html;
+            document.getElementById('submit-btn').disabled = false;
+        }
+
+        // 提交订单
+        async function submitOrder() {
+            // 检查登录
+            const user = await getCurrentUser();
+            if (!user) {
+                showMessage('请先登录', 'warning');
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 1500);
+                return;
+            }
+
+            // 收集乘客信息
+            const names = document.querySelectorAll('.passenger-name');
+            const ids = document.querySelectorAll('.passenger-id');
+            
+            const passengers = [];
+            const cardIdSet = new Set();
+            
+            for (let i = 0; i < selectedSeats.length; i++) {
+                const name = names[i].value.trim();
+                const cardId = ids[i].value.trim();
+                
+                if (!name || !cardId) {
+                    showMessage('请填写所有乘客信息', 'warning');
+                    return;
+                }
+                
+                if (!validateIdCard(cardId)) {
+                    showMessage(`乘客 ${i + 1} 的身份证号格式不正确`, 'warning');
+                    return;
+                }
+                
+                // 检查身份证号是否重复
+                if (cardIdSet.has(cardId)) {
+                    showMessage(`身份证号 ${cardId} 重复，同一订单中不能包含相同的身份证号`, 'warning');
+                    return;
+                }
+                cardIdSet.add(cardId);
+                
+                passengers.push({
+                    name: name,
+                    card_id: cardId,
+                    seat_id: selectedSeats[i].seat_id
+                });
+            }
+            
+            // 提交订单
+            document.getElementById('submit-btn').disabled = true;
+            document.getElementById('submit-btn').textContent = '提交中...';
+            
+            const result = await apiRequest(`${API_BASE}/ticket/book`, 'POST', {
+                schedule_id: scheduleId,
+                passengers: passengers
+            });
+            
+            if (result.success) {
+                showMessage('订票成功！', 'success');
+                setTimeout(() => {
+                    window.location.href = '/my_orders';
+                }, 1500);
+            } else {
+                showMessage(result.message || '订票失败', 'danger');
+                document.getElementById('submit-btn').disabled = false;
+                document.getElementById('submit-btn').textContent = '确认预订';
+            }
+        }
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 检查登录
+            const user = await getCurrentUser();
+            if (!user) {
+                showMessage('请先登录', 'warning');
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 1500);
+                return;
+            }
+            
+            // 加载班次信息和座位信息
+            loadScheduleInfo();
+            loadSeats();
+        });
+    </script>
+</body>
+</html>
+

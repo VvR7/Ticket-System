@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 - 22306订票系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .tab-nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .tab-nav button {
+            padding: 10px 20px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 16px;
+            border-bottom: 3px solid transparent;
+        }
+        .tab-nav button.active {
+            border-bottom-color: #667eea;
+            color: #667eea;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="/" class="navbar-logo">22306</a>
+            <ul class="navbar-menu">
+                <li><a href="/">首页</a></li>
+                <li><a href="/search">车票查询</a></li>
+                <li><a href="/admin">管理后台</a></li>
+            </ul>
+            <div class="navbar-user" id="user-info"></div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="card">
+            <div class="card-header">管理后台</div>
+            
+            <!-- 标签导航 -->
+            <div class="tab-nav">
+                <button class="active" onclick="showTab('schedules')">班次管理</button>
+                <button onclick="showTab('stations')">车站管理</button>
+                <button onclick="showTab('routes')">线路管理</button>
+                <button onclick="showTab('reports')">报表统计</button>
+                <button onclick="showTab('logs')">操作日志</button>
+            </div>
+
+            <!-- 班次管理 -->
+            <div id="tab-schedules" class="tab-content active">
+                <div class="mb-2">
+                    <button class="btn btn-primary" onclick="showAddScheduleForm()">添加班次</button>
+                    <button class="btn btn-secondary" onclick="loadSchedules()">刷新</button>
+                </div>
+                <div id="schedules-list">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+
+            <!-- 车站管理 -->
+            <div id="tab-stations" class="tab-content">
+                <div class="mb-2">
+                    <button class="btn btn-primary" onclick="showAddStationForm()">添加车站</button>
+                </div>
+                <div id="stations-list">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+
+            <!-- 线路管理 -->
+            <div id="tab-routes" class="tab-content">
+                <div class="mb-2">
+                    <button class="btn btn-primary" onclick="showAddRouteForm()">添加线路</button>
+                </div>
+                <div id="routes-list">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+
+            <!-- 报表统计 -->
+            <div id="tab-reports" class="tab-content">
+                <h3>销售报表</h3>
+                <div class="row mb-2">
+                    <div class="col-2">
+                        <input type="date" class="form-control" id="report_start_date">
+                    </div>
+                    <div class="col-2">
+                        <input type="date" class="form-control" id="report_end_date">
+                    </div>
+                    <div class="col">
+                        <button class="btn btn-primary" onclick="loadSalesReport()">查询</button>
+                        <button class="btn btn-success" onclick="exportReport()">导出报表</button>
+                    </div>
+                </div>
+                <div id="sales-report"></div>
+                
+                <h3 class="mt-3">班次统计</h3>
+                <div id="schedule-report"></div>
+            </div>
+
+            <!-- 操作日志 -->
+            <div id="tab-logs" class="tab-content">
+                <button class="btn btn-secondary mb-2" onclick="loadLogs()">刷新</button>
+                <div id="logs-list">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模态框 - 添加班次 -->
+    <div id="modal-add-schedule" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('modal-add-schedule')">&times;</span>
+            <div class="modal-header">添加班次</div>
+            <form id="form-add-schedule">
+                <div class="form-group">
+                    <label>班次号 *</label>
+                    <input type="text" class="form-control" name="schedule_no" required>
+                </div>
+                <div class="form-group">
+                    <label>线路 *</label>
+                    <select class="form-control" name="route_id" required id="select-route"></select>
+                </div>
+                <div class="form-group">
+                    <label>车辆 *</label>
+                    <select class="form-control" name="vehicle_id" required id="select-vehicle"></select>
+                </div>
+                <div class="row">
+                    <div class="col-2">
+                        <div class="form-group">
+                            <label>发车日期 *</label>
+                            <input type="date" class="form-control" name="departure_date" id="departure_date" required>
+                        </div>
+                    </div>
+                    <div class="col-2">
+                        <div class="form-group">
+                            <label>发车时间 *</label>
+                            <input type="time" class="form-control" name="departure_time" id="departure_time" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-2">
+                        <div class="form-group">
+                            <label>到达日期 *</label>
+                            <input type="date" class="form-control" name="arrival_date" id="arrival_date" required>
+                        </div>
+                    </div>
+                    <div class="col-2">
+                        <div class="form-group">
+                            <label>到达时间 *</label>
+                            <input type="time" class="form-control" name="arrival_time" id="arrival_time" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-2">
+                        <div class="form-group">
+                            <label>票价（元）*</label>
+                            <input type="number" class="form-control" name="base_price" id="base_price" step="0.01" min="0" required>
+                            <small class="text-muted">必须大于等于0</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">提交</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-add-schedule')">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 模态框 - 添加车站 -->
+    <div id="modal-add-station" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('modal-add-station')">&times;</span>
+            <div class="modal-header">添加车站</div>
+            <form id="form-add-station">
+                <div class="form-group">
+                    <label>车站名称 *</label>
+                    <input type="text" class="form-control" name="station_name" required>
+                </div>
+                <div class="row">
+                    <div class="col-2">
+                        <div class="form-group">
+                            <label>省份 *</label>
+                            <input type="text" class="form-control" name="province" required>
+                        </div>
+                    </div>
+                    <div class="col-2">
+                        <div class="form-group">
+                            <label>城市 *</label>
+                            <input type="text" class="form-control" name="city" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>车站类型 *</label>
+                    <select class="form-control" name="station_type" required>
+                        <option value="train">火车站</option>
+                        <option value="bus">汽车站</option>
+                        <option value="both">火车站+汽车站</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>地址</label>
+                    <input type="text" class="form-control" name="address">
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">提交</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-add-station')">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 模态框 - 添加线路 -->
+    <div id="modal-add-route" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('modal-add-route')">&times;</span>
+            <div class="modal-header">添加线路</div>
+            <form id="form-add-route">
+                <div class="form-group">
+                    <label>线路名称 *</label>
+                    <input type="text" class="form-control" name="route_name" required placeholder="例如：北京-上海线">
+                </div>
+                <div class="form-group">
+                    <label>起始站 *</label>
+                    <select class="form-control" name="start_station_id" required id="select-start-station"></select>
+                </div>
+                <div class="form-group">
+                    <label>终点站 *</label>
+                    <select class="form-control" name="end_station_id" required id="select-end-station"></select>
+                </div>
+                <div class="form-group">
+                    <label>线路类型 *</label>
+                    <select class="form-control" name="route_type" required>
+                        <option value="">请选择</option>
+                        <option value="train">火车</option>
+                        <option value="bus">客车</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>总里程（公里）</label>
+                    <input type="number" class="form-control" name="total_distance" step="0.01" placeholder="可选">
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">提交</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modal-add-route')">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/js/common.js"></script>
+    <script>
+        // 标签切换
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-nav button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+            event.target.classList.add('active');
+            
+            // 加载对应的数据
+            if (tabName === 'schedules') loadSchedules();
+            else if (tabName === 'stations') loadStations();
+            else if (tabName === 'routes') loadRoutes();
+            else if (tabName === 'reports') {
+                loadSalesReport();
+                loadScheduleReport();
+            }
+            else if (tabName === 'logs') loadLogs();
+        }
+
+        // 模态框
+        function showModal(modalId) {
+            document.getElementById(modalId).style.display = 'block';
+        }
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        // 加载班次列表
+        async function loadSchedules() {
+            const result = await apiRequest(`${API_BASE}/admin/schedules`);
+            const container = document.getElementById('schedules-list');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="alert alert-danger">${result.message}</div>`;
+                return;
+            }
+            
+            const schedules = result.schedules;
+            let html = '<table class="table"><thead><tr>';
+            html += '<th>ID</th><th>班次号</th><th>线路</th><th>车辆</th>';
+            html += '<th>发车日期</th><th>发车时间</th><th>到达日期</th><th>到达时间</th>';
+            html += '<th>票价</th><th>状态</th><th>操作</th>';
+            html += '</tr></thead><tbody>';
+            
+            schedules.forEach(s => {
+                html += '<tr>';
+                html += `<td>${s.schedule_id}</td>`;
+                html += `<td>${s.schedule_no}</td>`;
+                html += `<td>${s.route_name}</td>`;
+                html += `<td>${s.vehicle_no}</td>`;
+                html += `<td>${formatDate(s.departure_date)}</td>`;
+                html += `<td>${formatTime(s.departure_time)}</td>`;
+                html += `<td>${formatDate(s.arrival_date || s.departure_date)}</td>`;
+                html += `<td>${formatTime(s.arrival_time)}</td>`;
+                html += `<td>¥${s.base_price}</td>`;
+                html += `<td>${getStatusBadge(s.status)}</td>`;
+                html += `<td>`;
+                html += `<button class="btn btn-danger" onclick="deleteSchedule(${s.schedule_id})">删除</button>`;
+                html += `</td>`;
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // 加载车站列表
+        async function loadStations() {
+            const result = await apiRequest(`${API_BASE}/ticket/stations`);
+            const container = document.getElementById('stations-list');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="alert alert-danger">${result.message}</div>`;
+                return;
+            }
+            
+            const stations = result.stations;
+            let html = '<table class="table"><thead><tr>';
+            html += '<th>ID</th><th>车站名</th><th>城市</th><th>省份</th><th>类型</th><th>地址</th><th>操作</th>';
+            html += '</tr></thead><tbody>';
+            
+            stations.forEach(s => {
+                html += '<tr>';
+                html += `<td>${s.station_id}</td>`;
+                html += `<td>${s.station_name}</td>`;
+                html += `<td>${s.city}</td>`;
+                html += `<td>${s.province}</td>`;
+                html += `<td>${s.station_type}</td>`;
+                html += `<td>${s.address || '-'}</td>`;
+                html += `<td>`;
+                html += `<button class="btn btn-danger" onclick="deleteStation(${s.station_id})">删除</button>`;
+                html += `</td>`;
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // 加载线路列表
+        async function loadRoutes() {
+            const result = await apiRequest(`${API_BASE}/admin/routes`);
+            const container = document.getElementById('routes-list');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="alert alert-danger">${result.message}</div>`;
+                return;
+            }
+            
+            const routes = result.routes;
+            let html = '<table class="table"><thead><tr>';
+            html += '<th>ID</th><th>线路名</th><th>起点</th><th>终点</th><th>类型</th><th>距离</th><th>操作</th>';
+            html += '</tr></thead><tbody>';
+            
+            routes.forEach(r => {
+                html += '<tr>';
+                html += `<td>${r.route_id}</td>`;
+                html += `<td>${r.route_name}</td>`;
+                html += `<td>${r.start_station_name}</td>`;
+                html += `<td>${r.end_station_name}</td>`;
+                html += `<td>${r.route_type}</td>`;
+                html += `<td>${r.total_distance}km</td>`;
+                html += `<td>`;
+                html += `<button class="btn btn-danger" onclick="deleteRoute(${r.route_id})">删除</button>`;
+                html += `</td>`;
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // 加载操作日志
+        async function loadLogs() {
+            const result = await apiRequest(`${API_BASE}/admin/logs`);
+            const container = document.getElementById('logs-list');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="alert alert-danger">${result.message}</div>`;
+                return;
+            }
+            
+            const logs = result.logs;
+            let html = '<table class="table"><thead><tr>';
+            html += '<th>时间</th><th>操作员</th><th>操作类型</th><th>描述</th><th>IP</th>';
+            html += '</tr></thead><tbody>';
+            
+            logs.forEach(log => {
+                html += '<tr>';
+                html += `<td>${formatDateTime(log.operation_time)}</td>`;
+                html += `<td>${log.username || '-'}</td>`;
+                html += `<td>${log.operation_type}</td>`;
+                html += `<td>${log.operation_desc || '-'}</td>`;
+                html += `<td>${log.ip_address || '-'}</td>`;
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // 加载销售报表
+        async function loadSalesReport() {
+            const startDate = document.getElementById('report_start_date').value;
+            const endDate = document.getElementById('report_end_date').value;
+            
+            const params = new URLSearchParams();
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            
+            const result = await apiRequest(`${API_BASE}/admin/report/sales?${params}`);
+            const container = document.getElementById('sales-report');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="alert alert-danger">${result.message}</div>`;
+                return;
+            }
+            
+            const report = result.report;
+            if (report.length === 0) {
+                container.innerHTML = '<p>暂无数据</p>';
+                return;
+            }
+            
+            let html = '<table class="table"><thead><tr>';
+            html += '<th>日期</th><th>订单数</th><th>退票数</th><th>票数</th><th>销售额</th><th>退款额</th><th>实际收入</th><th>团体订单</th>';
+            html += '</tr></thead><tbody>';
+            
+            report.forEach(r => {
+                html += '<tr>';
+                html += `<td>${r.order_date}</td>`;
+                html += `<td>${r.order_count}</td>`;
+                html += `<td><span class="badge badge-warning">${r.refunded_count}</span></td>`;
+                html += `<td>${r.ticket_count}</td>`;
+                html += `<td>¥${r.total_sales.toFixed(2)}</td>`;
+                html += `<td style="color:#ff6b6b;">-¥${r.refunded_amount.toFixed(2)}</td>`;
+                html += `<td><strong style="color:#51cf66;">¥${r.net_revenue.toFixed(2)}</strong></td>`;
+                html += `<td>${r.group_order_count}</td>`;
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // 加载班次统计报表
+        async function loadScheduleReport() {
+            const result = await apiRequest(`${API_BASE}/admin/report/schedule`);
+            const container = document.getElementById('schedule-report');
+            
+            if (!result.success) {
+                container.innerHTML = `<div class="alert alert-danger">${result.message}</div>`;
+                return;
+            }
+            
+            const report = result.report;
+            let html = '<table class="table"><thead><tr>';
+            html += '<th>班次号</th><th>线路</th><th>总班次</th><th>正常</th><th>延误</th><th>取消</th><th>订单数</th><th>退票数</th><th>收入</th>';
+            html += '</tr></thead><tbody>';
+            
+            report.forEach(r => {
+                html += '<tr>';
+                html += `<td>${r.schedule_no}</td>`;
+                html += `<td>${r.route_name}</td>`;
+                html += `<td>${r.total_schedules}</td>`;
+                html += `<td><span class="badge badge-success">${r.normal_count}</span></td>`;
+                html += `<td><span class="badge badge-warning">${r.delayed_count}</span></td>`;
+                html += `<td><span class="badge badge-danger">${r.cancelled_count}</span></td>`;
+                html += `<td>${r.order_count}</td>`;
+                html += `<td><span class="badge badge-warning">${r.refunded_order_count}</span></td>`;
+                html += `<td><strong>¥${r.total_revenue.toFixed(2)}</strong></td>`;
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // 导出报表
+        async function exportReport() {
+            const result = await apiRequest(`${API_BASE}/admin/report/export`);
+            if (result.success) {
+                // 转换为CSV并下载
+                const data = result.data;
+                let csv = '订单ID,用户名,姓名,班次号,线路,起点,终点,发车日期,发车时间,下单时间,票数,总金额,订单类型,状态\n';
+                data.forEach(row => {
+                    csv += `${row.order_id},${row.username},${row.real_name},${row.schedule_no},${row.route_name},`;
+                    csv += `${row.start_station},${row.end_station},${row.departure_date},${row.departure_time},`;
+                    csv += `${row.order_time},${row.ticket_count},${row.total_amount},${row.order_type},${row.status}\n`;
+                });
+                
+                const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `报表_${new Date().toISOString().split('T')[0]}.csv`;
+                link.click();
+                
+                showMessage('报表导出成功', 'success');
+            } else {
+                showMessage(result.message || '导出失败', 'danger');
+            }
+        }
+
+        // 显示添加班次表单
+        async function showAddScheduleForm() {
+            // 加载线路和车辆选项
+            const routesResult = await apiRequest(`${API_BASE}/admin/routes`);
+            const vehiclesResult = await apiRequest(`${API_BASE}/admin/vehicles`);
+            
+            if (routesResult.success && vehiclesResult.success) {
+                const routeSelect = document.getElementById('select-route');
+                const vehicleSelect = document.getElementById('select-vehicle');
+                
+                routeSelect.innerHTML = '<option value="">请选择</option>';
+                routesResult.routes.forEach(r => {
+                    routeSelect.innerHTML += `<option value="${r.route_id}">${r.route_name} (${r.start_station_name} → ${r.end_station_name})</option>`;
+                });
+                
+                vehicleSelect.innerHTML = '<option value="">请选择</option>';
+                vehiclesResult.vehicles.forEach(v => {
+                    vehicleSelect.innerHTML += `<option value="${v.vehicle_id}">${v.vehicle_no} (${v.vehicle_type}, ${v.seat_count}座)</option>`;
+                });
+                
+                showModal('modal-add-schedule');
+            }
+        }
+
+        // 显示添加车站表单
+        function showAddStationForm() {
+            showModal('modal-add-station');
+        }
+
+        // 显示添加线路表单
+        async function showAddRouteForm() {
+            // 加载车站选项
+            const stationsResult = await apiRequest(`${API_BASE}/ticket/stations`);
+            
+            if (stationsResult.success) {
+                const startStationSelect = document.getElementById('select-start-station');
+                const endStationSelect = document.getElementById('select-end-station');
+                
+                let stationOptions = '<option value="">请选择</option>';
+                stationsResult.stations.forEach(s => {
+                    stationOptions += `<option value="${s.station_id}">${s.station_name} (${s.city})</option>`;
+                });
+                
+                startStationSelect.innerHTML = stationOptions;
+                endStationSelect.innerHTML = stationOptions;
+                
+                showModal('modal-add-route');
+            } else {
+                showMessage('加载车站列表失败', 'danger');
+            }
+        }
+
+        // 提交添加班次
+        document.getElementById('form-add-schedule').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            
+            // 前端验证：票价不能为负数
+            if (parseFloat(data.base_price) < 0) {
+                showMessage('票价不能为负数', 'warning');
+                return;
+            }
+            
+            // 前端验证：到达时间必须晚于发车时间
+            const departureDateTime = new Date(`${data.departure_date} ${data.departure_time}`);
+            const arrivalDateTime = new Date(`${data.arrival_date} ${data.arrival_time}`);
+            
+            if (arrivalDateTime <= departureDateTime) {
+                showMessage('到达时间必须晚于发车时间', 'warning');
+                return;
+            }
+            
+            const result = await apiRequest(`${API_BASE}/admin/schedule/add`, 'POST', data);
+            if (result.success) {
+                showMessage('班次添加成功', 'success');
+                closeModal('modal-add-schedule');
+                e.target.reset();
+                loadSchedules();
+            } else {
+                showMessage(result.message || '添加失败', 'danger');
+            }
+        });
+
+        // 提交添加车站
+        document.getElementById('form-add-station').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            
+            const result = await apiRequest(`${API_BASE}/admin/station/add`, 'POST', data);
+            if (result.success) {
+                showMessage('车站添加成功', 'success');
+                closeModal('modal-add-station');
+                e.target.reset();
+                loadStations();
+            } else {
+                showMessage(result.message || '添加失败', 'danger');
+            }
+        });
+
+        // 提交添加线路
+        document.getElementById('form-add-route').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            
+            // 验证起点和终点不能相同
+            if (data.start_station_id === data.end_station_id) {
+                showMessage('起始站和终点站不能相同', 'warning');
+                return;
+            }
+            
+            const result = await apiRequest(`${API_BASE}/admin/route/add`, 'POST', data);
+            if (result.success) {
+                showMessage('线路添加成功', 'success');
+                closeModal('modal-add-route');
+                e.target.reset();
+                loadRoutes();
+            } else {
+                showMessage(result.message || '添加失败', 'danger');
+            }
+        });
+
+        // 删除班次
+        async function deleteSchedule(id) {
+            if (!confirm('确定删除此班次吗？')) return;
+            const result = await apiRequest(`${API_BASE}/admin/schedule/${id}`, 'DELETE');
+            if (result.success) {
+                showMessage('删除成功', 'success');
+                loadSchedules();
+            } else {
+                showMessage(result.message || '删除失败', 'danger');
+            }
+        }
+
+        // 删除车站
+        async function deleteStation(id) {
+            if (!confirm('确定删除此车站吗？')) return;
+            const result = await apiRequest(`${API_BASE}/admin/station/${id}`, 'DELETE');
+            if (result.success) {
+                showMessage('删除成功', 'success');
+                loadStations();
+            } else {
+                showMessage(result.message || '删除失败', 'danger');
+            }
+        }
+
+        // 删除线路
+        async function deleteRoute(id) {
+            if (!confirm('确定删除此线路吗？')) return;
+            const result = await apiRequest(`${API_BASE}/admin/route/${id}`, 'DELETE');
+            if (result.success) {
+                showMessage('删除成功', 'success');
+                loadRoutes();
+            } else {
+                showMessage(result.message || '删除失败', 'danger');
+            }
+        }
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = await getCurrentUser();
+            if (!user || !user.is_admin) {
+                showMessage('需要管理员权限', 'danger');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1500);
+                return;
+            }
+            
+            loadSchedules();
+            
+            // 设置报表日期默认值
+            const today = new Date();
+            const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+            document.getElementById('report_start_date').valueAsDate = lastWeek;
+            document.getElementById('report_end_date').valueAsDate = today;
+        });
+    </script>
+</body>
+</html>
+

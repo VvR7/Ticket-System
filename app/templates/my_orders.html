@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的订单 - 22306订票系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="/" class="navbar-logo">22306</a>
+            <ul class="navbar-menu">
+                <li><a href="/">首页</a></li>
+                <li><a href="/search">车票查询</a></li>
+                <li><a href="/my_orders">我的订单</a></li>
+                <li><a href="/admin" style="display:none;">管理后台</a></li>
+            </ul>
+            <div class="navbar-user" id="user-info"></div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="card">
+            <div class="card-header">我的订单</div>
+            <div id="orders-container">
+                <div class="loading"><div class="spinner"></div><p>加载中...</p></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/common.js"></script>
+    <script>
+        // 加载订单列表
+        async function loadOrders() {
+            const result = await apiRequest(`${API_BASE}/ticket/my_orders`);
+            
+            const container = document.getElementById('orders-container');
+            
+            if (!result.success) {
+                if (result.message && result.message.includes('登录')) {
+                    container.innerHTML = '<div class="alert alert-warning">请先登录</div>';
+                    setTimeout(() => {
+                        window.location.href = '/login';
+                    }, 1500);
+                } else {
+                    container.innerHTML = `<div class="alert alert-danger">${result.message || '加载失败'}</div>`;
+                }
+                return;
+            }
+            
+            const orders = result.orders;
+            
+            if (orders.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p>暂无订单</p></div>';
+                return;
+            }
+            
+            let html = '';
+            orders.forEach(order => {
+                html += `<div class="card" style="background:#f9f9f9; margin-bottom:20px;">`;
+                html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">`;
+                html += `<div>`;
+                html += `<h3>${order.route_name}</h3>`;
+                html += `<p>${order.start_station} → ${order.end_station}</p>`;
+                html += `</div>`;
+                html += `<div style="text-align:right;">`;
+                html += `<h4>¥${order.total_amount}</h4>`;
+                html += `${getStatusBadge(order.status)}`;
+                html += `</div>`;
+                html += `</div>`;
+                
+                html += `<div class="row" style="font-size:14px; color:#666;">`;
+                html += `<div class="col-3">车次: <strong>${order.schedule_no}</strong></div>`;
+                html += `<div class="col-3">日期: ${formatDate(order.departure_date)}</div>`;
+                html += `<div class="col-3">发车: ${formatTime(order.departure_time)}</div>`;
+                html += `<div class="col-3">下单: ${formatDateTime(order.order_time)}</div>`;
+                html += `</div>`;
+                
+                // 车票列表
+                html += `<div style="margin-top:15px;">`;
+                html += `<h4>车票信息 ${getStatusBadge(order.order_type)}</h4>`;
+                html += `<table class="table">`;
+                html += `<thead><tr><th>乘客</th><th>身份证号</th><th>座位</th><th>票价</th><th>状态</th><th>操作</th></tr></thead>`;
+                html += `<tbody>`;
+                
+                order.tickets.forEach(ticket => {
+                    html += `<tr>`;
+                    html += `<td>${ticket.passenger_name}</td>`;
+                    html += `<td>${ticket.card_id}</td>`;
+                    html += `<td>${ticket.carriage_no ? ticket.carriage_no + '-' : ''}${ticket.seat_no} (${ticket.seat_type})</td>`;
+                    html += `<td>¥${ticket.price}</td>`;
+                    html += `<td>${getStatusBadge(ticket.status)}</td>`;
+                    html += `<td>`;
+                    if (ticket.status === 'valid') {
+                        html += `<button class="btn btn-danger" onclick="refundTicket(${ticket.ticket_id})">退票</button>`;
+                    } else {
+                        html += '-';
+                    }
+                    html += `</td>`;
+                    html += `</tr>`;
+                });
+                
+                html += `</tbody></table>`;
+                html += `</div>`;
+                html += `</div>`;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        // 退票
+        async function refundTicket(ticketId) {
+            if (!confirm('确定要退票吗？')) {
+                return;
+            }
+            
+            const reason = prompt('请输入退票原因（可选）:') || '';
+            
+            const result = await apiRequest(`${API_BASE}/ticket/refund`, 'POST', {
+                ticket_ids: [ticketId],
+                refund_reason: reason
+            });
+            
+            if (result.success) {
+                showMessage(`退票成功！退款金额: ¥${result.refund_amount}`, 'success');
+                setTimeout(() => {
+                    loadOrders();  // 重新加载订单
+                }, 1000);
+            } else {
+                showMessage(result.message || '退票失败', 'danger');
+            }
+        }
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = await getCurrentUser();
+            if (!user) {
+                showMessage('请先登录', 'warning');
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 1500);
+                return;
+            }
+            
+            loadOrders();
+        });
+    </script>
+</body>
+</html>
+
