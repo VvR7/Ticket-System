@@ -4,7 +4,8 @@
 """
 from flask import Blueprint, request, jsonify, session
 from datetime import datetime
-from app.database import db
+from app.database import db, Database
+import pymysql
 
 ticket_bp = Blueprint('ticket', __name__, url_prefix='/api/ticket')
 
@@ -225,6 +226,7 @@ def book_ticket():
     """
     订票
     支持个人和团体订票
+    支持死锁自动重试机制
     """
     data = request.get_json()
     user_id = session['user_id']
@@ -238,104 +240,111 @@ def book_ticket():
     # 判断是否为团体订票
     order_type = 'group' if len(passengers) > 1 else 'individual'
     
-    conn = db.get_connection()
-    cursor = conn.cursor()
-    
-    try:
-        # 开始事务
-        conn.begin()
+    # 使用装饰器包装的订票逻辑，支持死锁自动重试
+    @Database.retry_on_deadlock(max_retries=3)
+    def _do_book_ticket():
+        conn = db.get_connection()
+        cursor = conn.cursor()
         
-        # 检查提交的乘客列表中是否有重复的身份证号
-        card_ids = [p['card_id'] for p in passengers]
-        if len(card_ids) != len(set(card_ids)):
-            conn.rollback()
-            return jsonify({'success': False, 'message': '同一订单中不能包含相同的身份证号'}), 400
-        
-        # 检查这些身份证号是否已经在该车次订过票
-        card_placeholders = ','.join(['%s'] * len(card_ids))
-        check_card_sql = f"""
-            SELECT card_id FROM Ticket 
-            WHERE schedule_id = %s 
-            AND card_id IN ({card_placeholders})
-            AND status = 'valid'
-        """
-        cursor.execute(check_card_sql, [schedule_id] + card_ids)
-        existing_cards = cursor.fetchall()
-        
-        if existing_cards:
-            existing_card_list = ', '.join([c['card_id'] for c in existing_cards])
-            conn.rollback()
-            return jsonify({
-                'success': False, 
-                'message': f'身份证号 {existing_card_list} 已在该车次订票，每个身份证号只能订一张票'
-            }), 400
-        
-        # 锁定座位（悲观锁）
-        seat_ids = [p['seat_id'] for p in passengers]
-        placeholders = ','.join(['%s'] * len(seat_ids))
-        
-        # 检查座位是否可用
-        check_sql = f"""
-            SELECT seat_id FROM Ticket 
-            WHERE schedule_id = %s 
-            AND seat_id IN ({placeholders})
-            AND status = 'valid'
-            FOR UPDATE
-        """
-        cursor.execute(check_sql, [schedule_id] + seat_ids)
-        occupied_seats = cursor.fetchall()
-        
-        if occupied_seats:
-            conn.rollback()
-            return jsonify({'success': False, 'message': '所选座位已被占用'}), 400
-        
-        # 获取票价
-        cursor.execute(
-            "SELECT base_price FROM Schedule WHERE schedule_id = %s",
-            (schedule_id,)
-        )
-        schedule = cursor.fetchone()
-        
-        if not schedule:
-            conn.rollback()
-            return jsonify({'success': False, 'message': '班次不存在'}), 404
-        
-        base_price = float(schedule['base_price'])
-        total_amount = base_price * len(passengers)
-        
-        # 创建订单
-        cursor.execute(
-            """INSERT INTO `Order` (user_id, schedule_id, order_time, total_amount, ticket_count, order_type, status)
-               VALUES (%s, %s, %s, %s, %s, %s, 'confirmed')""",
-            (user_id, schedule_id, datetime.now(), total_amount, len(passengers), order_type)
-        )
-        order_id = cursor.lastrowid
-        
-        # 创建车票
-        for passenger in passengers:
+        try:
+            # 开始事务
+            conn.begin()
+            
+            # 检查提交的乘客列表中是否有重复的身份证号
+            card_ids = [p['card_id'] for p in passengers]
+            if len(card_ids) != len(set(card_ids)):
+                conn.rollback()
+                raise Exception('同一订单中不能包含相同的身份证号')
+            
+            # 检查这些身份证号是否已经在该车次订过票
+            card_placeholders = ','.join(['%s'] * len(card_ids))
+            check_card_sql = f"""
+                SELECT card_id FROM Ticket 
+                WHERE schedule_id = %s 
+                AND card_id IN ({card_placeholders})
+                AND status = 'valid'
+            """
+            cursor.execute(check_card_sql, [schedule_id] + card_ids)
+            existing_cards = cursor.fetchall()
+            
+            if existing_cards:
+                existing_card_list = ', '.join([c['card_id'] for c in existing_cards])
+                conn.rollback()
+                raise Exception(f'身份证号 {existing_card_list} 已在该车次订票，每个身份证号只能订一张票')
+            
+            # 锁定座位（悲观锁）
+            seat_ids = [p['seat_id'] for p in passengers]
+            placeholders = ','.join(['%s'] * len(seat_ids))
+            
+            # 检查座位是否可用
+            check_sql = f"""
+                SELECT seat_id FROM Ticket 
+                WHERE schedule_id = %s 
+                AND seat_id IN ({placeholders})
+                AND status = 'valid'
+                FOR UPDATE
+            """
+            cursor.execute(check_sql, [schedule_id] + seat_ids)
+            occupied_seats = cursor.fetchall()
+            
+            if occupied_seats:
+                conn.rollback()
+                raise Exception('所选座位已被占用')
+            
+            # 获取票价
             cursor.execute(
-                """INSERT INTO Ticket (order_id, schedule_id, seat_id, passenger_name, card_id, price, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, 'valid')""",
-                (order_id, schedule_id, passenger['seat_id'], passenger['name'], 
-                 passenger['card_id'], base_price)
+                "SELECT base_price FROM Schedule WHERE schedule_id = %s",
+                (schedule_id,)
             )
+            schedule = cursor.fetchone()
+            
+            if not schedule:
+                conn.rollback()
+                raise Exception('班次不存在')
+            
+            base_price = float(schedule['base_price'])
+            total_amount = base_price * len(passengers)
+            
+            # 创建订单
+            cursor.execute(
+                """INSERT INTO `Order` (user_id, schedule_id, order_time, total_amount, ticket_count, order_type, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, 'confirmed')""",
+                (user_id, schedule_id, datetime.now(), total_amount, len(passengers), order_type)
+            )
+            order_id = cursor.lastrowid
+            
+            # 创建车票
+            for passenger in passengers:
+                cursor.execute(
+                    """INSERT INTO Ticket (order_id, schedule_id, seat_id, passenger_name, card_id, price, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, 'valid')""",
+                    (order_id, schedule_id, passenger['seat_id'], passenger['name'], 
+                     passenger['card_id'], base_price)
+                )
         
-        # 提交事务
-        conn.commit()
-        
-        return jsonify({
-            'success': True,
-            'message': '订票成功',
-            'order_id': order_id,
-            'total_amount': total_amount
-        }), 201
-        
+            # 提交事务
+            conn.commit()
+            
+            return {
+                'success': True,
+                'message': '订票成功',
+                'order_id': order_id,
+                'total_amount': total_amount
+            }
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cursor.close()
+            conn.close()
+    
+    # 执行订票逻辑（带死锁重试）
+    try:
+        result = _do_book_ticket()
+        return jsonify(result), 201
     except Exception as e:
-        conn.rollback()
         return jsonify({'success': False, 'message': f'订票失败: {str(e)}'}), 500
-    finally:
-        cursor.close()
-        conn.close()
 
 
 @ticket_bp.route('/my_orders', methods=['GET'])
@@ -411,7 +420,7 @@ def get_my_orders():
 @ticket_bp.route('/refund', methods=['POST'])
 @require_login
 def refund_ticket():
-    """退票"""
+    """退票 - 支持死锁自动重试机制"""
     data = request.get_json()
     user_id = session['user_id']
     
@@ -421,85 +430,100 @@ def refund_ticket():
     if not ticket_ids or len(ticket_ids) == 0:
         return jsonify({'success': False, 'message': '请选择要退的车票'}), 400
     
-    conn = db.get_connection()
-    cursor = conn.cursor()
-    
-    try:
-        conn.begin()
+    # 使用装饰器包装的退票逻辑，支持死锁自动重试
+    @Database.retry_on_deadlock(max_retries=3)
+    def _do_refund_ticket():
+        conn = db.get_connection()
+        cursor = conn.cursor()
         
-        # 验证所有车票都属于该用户
-        placeholders = ','.join(['%s'] * len(ticket_ids))
-        check_sql = f"""
-            SELECT t.ticket_id, t.order_id, t.price, t.status
-            FROM Ticket t
-            JOIN `Order` o ON t.order_id = o.order_id
-            WHERE t.ticket_id IN ({placeholders})
-            AND o.user_id = %s
-            FOR UPDATE
-        """
-        cursor.execute(check_sql, ticket_ids + [user_id])
-        tickets = cursor.fetchall()
-        
-        if len(tickets) != len(ticket_ids):
-            conn.rollback()
-            return jsonify({'success': False, 'message': '部分车票不存在或无权退票'}), 403
-        
-        # 检查车票状态
-        for ticket in tickets:
-            if ticket['status'] != 'valid':
+        try:
+            conn.begin()
+            
+            # 验证所有车票都属于该用户
+            placeholders = ','.join(['%s'] * len(ticket_ids))
+            check_sql = f"""
+                SELECT t.ticket_id, t.order_id, t.price, t.status
+                FROM Ticket t
+                JOIN `Order` o ON t.order_id = o.order_id
+                WHERE t.ticket_id IN ({placeholders})
+                AND o.user_id = %s
+                FOR UPDATE
+            """
+            cursor.execute(check_sql, ticket_ids + [user_id])
+            tickets = cursor.fetchall()
+            
+            if len(tickets) != len(ticket_ids):
                 conn.rollback()
-                return jsonify({'success': False, 'message': '部分车票已退票或状态无效'}), 400
-        
-        # 退票
-        refund_amount = 0
-        for ticket in tickets:
-            # 更新车票状态
-            cursor.execute(
-                "UPDATE Ticket SET status = 'refunded' WHERE ticket_id = %s",
-                (ticket['ticket_id'],)
-            )
+                raise Exception('部分车票不存在或无权退票')
             
-            # 创建退票记录
-            cursor.execute(
-                """INSERT INTO Refund (ticket_id, refund_time, refund_amount, refund_reason, handled_by)
-                   VALUES (%s, %s, %s, %s, %s)""",
-                (ticket['ticket_id'], datetime.now(), ticket['price'], refund_reason, user_id)
-            )
+            # 检查车票状态
+            for ticket in tickets:
+                if ticket['status'] != 'valid':
+                    conn.rollback()
+                    raise Exception('部分车票已退票或状态无效')
             
-            refund_amount += float(ticket['price'])
-        
-        # 更新订单状态
-        # 如果订单的所有票都退了，则订单状态改为refunded
-        if tickets:
-            order_id = tickets[0]['order_id']
-            cursor.execute(
-                """SELECT COUNT(*) as total, 
-                   SUM(CASE WHEN status = 'refunded' THEN 1 ELSE 0 END) as refunded_count
-                   FROM Ticket WHERE order_id = %s""",
-                (order_id,)
-            )
-            count_result = cursor.fetchone()
-            
-            if count_result['total'] == count_result['refunded_count']:
+            # 退票
+            refund_amount = 0
+            for ticket in tickets:
+                # 更新车票状态
                 cursor.execute(
-                    "UPDATE `Order` SET status = 'refunded' WHERE order_id = %s",
+                    "UPDATE Ticket SET status = 'refunded' WHERE ticket_id = %s",
+                    (ticket['ticket_id'],)
+                )
+                
+                # 创建退票记录
+                cursor.execute(
+                    """INSERT INTO Refund (ticket_id, refund_time, refund_amount, refund_reason, handled_by)
+                       VALUES (%s, %s, %s, %s, %s)""",
+                    (ticket['ticket_id'], datetime.now(), ticket['price'], refund_reason, user_id)
+                )
+                
+                refund_amount += float(ticket['price'])
+            
+            # 更新订单状态
+            # 如果订单的所有票都退了，则订单状态改为refunded
+            if tickets:
+                order_id = tickets[0]['order_id']
+                # 锁定订单记录，防止并发退票导致状态不一致
+                cursor.execute(
+                    "SELECT order_id FROM `Order` WHERE order_id = %s FOR UPDATE",
                     (order_id,)
                 )
-        
-        conn.commit()
-        
-        return jsonify({
-            'success': True,
-            'message': '退票成功',
-            'refund_amount': refund_amount
-        }), 200
-        
+                cursor.execute(
+                    """SELECT COUNT(*) as total, 
+                       SUM(CASE WHEN status = 'refunded' THEN 1 ELSE 0 END) as refunded_count
+                       FROM Ticket WHERE order_id = %s""",
+                    (order_id,)
+                )
+                count_result = cursor.fetchone()
+                
+                if count_result['total'] == count_result['refunded_count']:
+                    cursor.execute(
+                        "UPDATE `Order` SET status = 'refunded' WHERE order_id = %s",
+                        (order_id,)
+                    )
+            
+            conn.commit()
+            
+            return {
+                'success': True,
+                'message': '退票成功',
+                'refund_amount': refund_amount
+            }
+            
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            cursor.close()
+            conn.close()
+    
+    # 执行退票逻辑（带死锁重试）
+    try:
+        result = _do_refund_ticket()
+        return jsonify(result), 200
     except Exception as e:
-        conn.rollback()
         return jsonify({'success': False, 'message': f'退票失败: {str(e)}'}), 500
-    finally:
-        cursor.close()
-        conn.close()
 
 
 @ticket_bp.route('/stations', methods=['GET'])

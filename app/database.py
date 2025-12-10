@@ -5,11 +5,53 @@
 import pymysql
 from pymysql.cursors import DictCursor
 from contextlib import contextmanager
+from functools import wraps
+import time
+import random
 from app.config import Config
 
 
 class Database:
     """数据库连接管理类"""
+    
+    @staticmethod
+    def retry_on_deadlock(max_retries=3, base_wait_time=0.01):
+        """
+        死锁重试装饰器
+        :param max_retries: 最大重试次数，默认3次
+        :param base_wait_time: 基础等待时间（秒），默认0.01秒
+        :return: 装饰器函数
+        """
+        def decorator(func):
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                for attempt in range(max_retries):
+                    try:
+                        return func(*args, **kwargs)
+                    except pymysql.err.OperationalError as e:
+                        # 检查是否是死锁错误（错误码1213）
+                        if e.args[0] == 1213:
+                            if attempt < max_retries - 1:
+                                # 使用指数退避策略，避免多个事务同时重试
+                                wait_time = random.uniform(
+                                    base_wait_time * (2 ** attempt),
+                                    base_wait_time * (2 ** (attempt + 1))
+                                )
+                                print(f"检测到死锁，{wait_time:.4f}秒后进行第{attempt + 2}次重试...")
+                                time.sleep(wait_time)
+                                continue
+                            else:
+                                # 达到最大重试次数
+                                raise Exception('系统繁忙，请稍后重试（死锁）')
+                        else:
+                            # 其他操作错误，直接抛出
+                            raise
+                    except Exception as e:
+                        # 非死锁异常，直接抛出
+                        raise
+                return None
+            return wrapper
+        return decorator
     
     @staticmethod
     def get_connection():
@@ -38,6 +80,12 @@ class Database:
             yield cursor
             if commit:
                 conn.commit()
+        except pymysql.err.OperationalError as e:
+            conn.rollback()
+            # 保留原始的死锁异常，让装饰器处理
+            if e.args[0] == 1213:
+                raise
+            raise e
         except Exception as e:
             conn.rollback()
             raise e
