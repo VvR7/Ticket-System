@@ -4,7 +4,7 @@
 """
 from flask import Blueprint, request, jsonify, session
 from datetime import datetime
-from app.database import db
+from app.database import db, Database
 import io
 import csv
 
@@ -636,4 +636,20 @@ def get_all_schedules():
         }), 200
     except Exception as e:
         return jsonify({'success': False, 'message': f'查询失败: {str(e)}'}), 500
+
+
+# ==================== 系统监控 ====================
+
+@admin_bp.route('/pool/status', methods=['GET'])
+@require_admin
+def get_pool_status():
+    """获取数据库连接池状态"""
+    try:
+        status = Database.get_pool_status()
+        return jsonify({
+            'success': True,
+            'pool_status': status
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取连接池状态失败: {str(e)}'}), 500
 

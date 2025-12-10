@@ -8,6 +8,7 @@ from app.config import Config
 from app.routes.auth import auth_bp
 from app.routes.ticket import ticket_bp
 from app.routes.admin import admin_bp
+from app.database import Database
 
 
 def create_app():
@@ -16,6 +17,9 @@ def create_app():
     
     # 加载配置
     app.config.from_object(Config)
+    
+    # 初始化数据库连接池
+    Database.init_pool()
     
     # 启用CORS
     CORS(app, supports_credentials=True)

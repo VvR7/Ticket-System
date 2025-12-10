@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-数据库连接管理
+数据库连接管理（使用连接池）
 """
 import pymysql
 from pymysql.cursors import DictCursor
@@ -8,11 +8,68 @@ from contextlib import contextmanager
 from functools import wraps
 import time
 import random
+from dbutils.pooled_db import PooledDB
 from app.config import Config
 
 
 class Database:
-    """数据库连接管理类"""
+    """数据库连接管理类（使用连接池）"""
+    
+    # 连接池实例（类变量，所有实例共享）
+    _pool = None
+    
+    @classmethod
+    def init_pool(cls):
+        """
+        初始化数据库连接池
+        连接池可以：
+        1. 复用连接，减少建立/关闭连接的开销
+        2. 控制并发连接数，防止数据库过载
+        3. 自动管理连接的生命周期
+        """
+        if cls._pool is None:
+            print("正在初始化数据库连接池...")
+            cls._pool = PooledDB(
+                creator=pymysql,           # 使用pymysql作为连接模块
+                maxconnections=Config.POOL_MAX_CONNECTIONS,  # 连接池允许的最大连接数
+                mincached=Config.POOL_MIN_CACHED,            # 初始化时创建的空闲连接数
+                maxcached=Config.POOL_MAX_CACHED,            # 连接池中最多保持的空闲连接数
+                maxshared=Config.POOL_MAX_SHARED,            # 最大共享连接数
+                blocking=Config.POOL_BLOCKING,               # 连接池满时是否阻塞等待
+                maxusage=Config.POOL_MAX_USAGE,              # 单个连接最大使用次数
+                setsession=[],                               # 连接建立时执行的SQL命令列表
+                ping=1,                                      # 检测连接是否可用（0=不检测, 1=默认检测, 2=连接使用时检测, 4=事务开始时检测, 7=总是检测）
+                reset=Config.POOL_RESET,                     # 连接归还池时是否重置状态
+                # 数据库连接参数
+                host=Config.MYSQL_HOST,
+                port=Config.MYSQL_PORT,
+                user=Config.MYSQL_USER,
+                password=Config.MYSQL_PASSWORD,
+                database=Config.MYSQL_DATABASE,
+                charset=Config.MYSQL_CHARSET,
+                cursorclass=DictCursor,
+                autocommit=False
+            )
+            print(f"数据库连接池初始化成功！配置：max={Config.POOL_MAX_CONNECTIONS}, min_cached={Config.POOL_MIN_CACHED}, max_cached={Config.POOL_MAX_CACHED}")
+        return cls._pool
+    
+    @classmethod
+    def get_pool_status(cls):
+        """
+        获取连接池状态信息（用于监控）
+        """
+        if cls._pool is None:
+            return "连接池未初始化"
+        
+        # DBUtils的PooledDB没有直接提供状态查询接口
+        # 这里返回配置信息
+        return {
+            'max_connections': Config.POOL_MAX_CONNECTIONS,
+            'min_cached': Config.POOL_MIN_CACHED,
+            'max_cached': Config.POOL_MAX_CACHED,
+            'max_shared': Config.POOL_MAX_SHARED,
+            'status': '运行中'
+        }
     
     @staticmethod
     def retry_on_deadlock(max_retries=3, base_wait_time=0.01):
@@ -53,19 +110,15 @@ class Database:
             return wrapper
         return decorator
     
-    @staticmethod
-    def get_connection():
-        """获取数据库连接"""
-        return pymysql.connect(
-            host=Config.MYSQL_HOST,
-            port=Config.MYSQL_PORT,
-            user=Config.MYSQL_USER,
-            password=Config.MYSQL_PASSWORD,
-            database=Config.MYSQL_DATABASE,
-            charset=Config.MYSQL_CHARSET,
-            cursorclass=DictCursor,
-            autocommit=False
-        )
+    @classmethod
+    def get_connection(cls):
+        """
+        从连接池获取数据库连接
+        :return: 数据库连接对象
+        """
+        if cls._pool is None:
+            cls.init_pool()
+        return cls._pool.connection()
     
     @staticmethod
     @contextmanager

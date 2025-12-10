@@ -18,6 +18,15 @@ class Config:
     MYSQL_DATABASE = 'ticket_system'
     MYSQL_CHARSET = 'utf8mb4'
     
+    # 连接池配置
+    POOL_MAX_CONNECTIONS = 20  # 最大连接数
+    POOL_MIN_CACHED = 2        # 初始化时创建的空闲连接数
+    POOL_MAX_CACHED = 5        # 连接池中最多保持的空闲连接数
+    POOL_MAX_SHARED = 10       # 最大共享连接数
+    POOL_BLOCKING = True       # 连接池满时是否阻塞等待
+    POOL_MAX_USAGE = 0         # 连接最大使用次数（0表示无限制）
+    POOL_RESET = True          # 连接归还池时是否重置状态
+    
     # Session配置
     SESSION_TIMEOUT = 3600  # 1小时
     
