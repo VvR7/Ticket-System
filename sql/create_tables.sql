@@ -1,6 +1,4 @@
--- 22306订票系统 数据库建表脚本
--- 数据库：ticket_system
--- 编码：utf8mb4
+--数据库建表脚本
 
 -- 创建数据库
 DROP DATABASE IF EXISTS ticket_system;

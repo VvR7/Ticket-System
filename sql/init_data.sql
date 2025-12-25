@@ -163,7 +163,7 @@ INSERT INTO Route_Station (route_id, station_id, order_no, distance_from_start, 
 (7, 13, 3, 120, 120);      -- 深圳站
 
 -- ============================================
--- 6. 插入班次数据（未来7天）
+-- 6. 插入班次数据
 -- ============================================
 
 -- 京沪高铁班次 G1次 (每天)
@@ -199,42 +199,13 @@ INSERT INTO Schedule (schedule_no, route_id, vehicle_id, departure_date, departu
 ('粤A-001', 7, 10, DATE_ADD(CURDATE(), INTERVAL 1 DAY), '08:00:00', '10:00:00', 50.0, 'normal'),
 ('粤A-002', 7, 10, CURDATE(), '14:00:00', '16:00:00', 50.0, 'normal');
 
--- ============================================
--- 7. 插入测试用户数据
--- ============================================
+
 
 -- 管理员用户（密码为明文，用于测试）
 INSERT INTO User (username, password, real_name, security_question, security_answer, is_admin) VALUES
 ('Admin', '23336326', '系统管理员', '你的角色是什么？', '管理员', TRUE);
 
--- 注意：密码需要在应用层用bcrypt加密，这里用占位符
-INSERT INTO User (username, password, real_name, security_question, security_answer, is_admin) VALUES
-('test001', '$2b$12$placeholder001', '张三', '你的小学是什么？', '实验小学', FALSE),
-('test002', '$2b$12$placeholder002', '李四', '你的宠物叫什么？', '小白', FALSE),
-('test003', '$2b$12$placeholder003', '王五', '你的外号是什么？', '小王', FALSE);
 
--- ============================================
--- 8. 插入测试订单和车票数据（已注释，避免产生测试数据）
--- ============================================
-
--- 注意：以下测试订单数据已被注释，如需测试可手动取消注释
-
--- -- 用户test001的订单
--- INSERT INTO `Order` (user_id, schedule_id, order_time, total_amount, ticket_count, order_type, status) VALUES
--- (2, 1, NOW(), 553.5, 1, 'individual', 'confirmed');
-
--- -- 对应的车票
--- INSERT INTO Ticket (order_id, schedule_id, seat_id, passenger_name, card_id, price, status) VALUES
--- (1, 1, 11, '张三', '110101199001011234', 553.5, 'valid');
-
--- -- 用户test002的团体订单
--- INSERT INTO `Order` (user_id, schedule_id, order_time, total_amount, ticket_count, order_type, status) VALUES
--- (3, 1, NOW(), 1107.0, 2, 'group', 'confirmed');
-
--- -- 对应的2张车票
--- INSERT INTO Ticket (order_id, schedule_id, seat_id, passenger_name, card_id, price, status) VALUES
--- (2, 1, 12, '李四', '110101199002021234', 553.5, 'valid'),
--- (2, 1, 13, '赵六', '110101199003031234', 553.5, 'valid');
 
 COMMIT;
 
