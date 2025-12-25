@@ -1,7 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-管理员相关路由
-"""
 from flask import Blueprint, request, jsonify, session
 from datetime import datetime
 from app.database import db, Database

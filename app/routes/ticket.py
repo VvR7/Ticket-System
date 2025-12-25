@@ -22,16 +22,6 @@ def require_login(f):
 
 @ticket_bp.route('/search', methods=['GET'])
 def search_schedules():
-    """
-    查询班次
-    支持的查询条件：
-    - date: 日期
-    - start_city: 出发城市
-    - end_city: 到达城市
-    - start_station_id: 出发站ID
-    - end_station_id: 到达站ID
-    - schedule_no: 班次号
-    """
     date = request.args.get('date')
     start_city = request.args.get('start_city')
     end_city = request.args.get('end_city')
@@ -481,10 +471,8 @@ def refund_ticket():
                 refund_amount += float(ticket['price'])
             
             # 更新订单状态
-            # 如果订单的所有票都退了，则订单状态改为refunded
             if tickets:
                 order_id = tickets[0]['order_id']
-                # 锁定订单记录，防止并发退票导致状态不一致
                 cursor.execute(
                     "SELECT order_id FROM `Order` WHERE order_id = %s FOR UPDATE",
                     (order_id,)

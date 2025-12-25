@@ -30,17 +30,16 @@ class Database:
         if cls._pool is None:
             print("正在初始化数据库连接池...")
             cls._pool = PooledDB(
-                creator=pymysql,           # 使用pymysql作为连接模块
-                maxconnections=Config.POOL_MAX_CONNECTIONS,  # 连接池允许的最大连接数
-                mincached=Config.POOL_MIN_CACHED,            # 初始化时创建的空闲连接数
-                maxcached=Config.POOL_MAX_CACHED,            # 连接池中最多保持的空闲连接数
-                maxshared=Config.POOL_MAX_SHARED,            # 最大共享连接数
-                blocking=Config.POOL_BLOCKING,               # 连接池满时是否阻塞等待
-                maxusage=Config.POOL_MAX_USAGE,              # 单个连接最大使用次数
-                setsession=[],                               # 连接建立时执行的SQL命令列表
-                ping=1,                                      # 检测连接是否可用（0=不检测, 1=默认检测, 2=连接使用时检测, 4=事务开始时检测, 7=总是检测）
-                reset=Config.POOL_RESET,                     # 连接归还池时是否重置状态
-                # 数据库连接参数
+                creator=pymysql,         
+                maxconnections=Config.POOL_MAX_CONNECTIONS,  
+                mincached=Config.POOL_MIN_CACHED,           
+                maxcached=Config.POOL_MAX_CACHED,            
+                maxshared=Config.POOL_MAX_SHARED,            
+                blocking=Config.POOL_BLOCKING,              
+                maxusage=Config.POOL_MAX_USAGE,             
+                setsession=[],                              
+                ping=1,                                    
+                reset=Config.POOL_RESET,                    
                 host=Config.MYSQL_HOST,
                 port=Config.MYSQL_PORT,
                 user=Config.MYSQL_USER,
@@ -123,10 +122,7 @@ class Database:
     @staticmethod
     @contextmanager
     def get_cursor(commit=True):
-        """
-        获取数据库游标的上下文管理器
-        :param commit: 是否自动提交事务
-        """
+
         conn = Database.get_connection()
         cursor = conn.cursor()
         try:
@@ -148,13 +144,6 @@ class Database:
     
     @staticmethod
     def execute_query(sql, params=None, fetch_one=False):
-        """
-        执行查询SQL
-        :param sql: SQL语句
-        :param params: 参数
-        :param fetch_one: 是否只获取一条记录
-        :return: 查询结果
-        """
         with Database.get_cursor(commit=False) as cursor:
             cursor.execute(sql, params or ())
             if fetch_one:
@@ -163,35 +152,21 @@ class Database:
     
     @staticmethod
     def execute_update(sql, params=None):
-        """
-        执行更新SQL（INSERT, UPDATE, DELETE）
-        :param sql: SQL语句
-        :param params: 参数
-        :return: 影响的行数
-        """
+
         with Database.get_cursor(commit=True) as cursor:
             affected_rows = cursor.execute(sql, params or ())
             return affected_rows
     
     @staticmethod
     def execute_insert(sql, params=None):
-        """
-        执行插入SQL并返回插入的ID
-        :param sql: SQL语句
-        :param params: 参数
-        :return: 插入的ID
-        """
+
         with Database.get_cursor(commit=True) as cursor:
             cursor.execute(sql, params or ())
             return cursor.lastrowid
     
     @staticmethod
     def execute_batch(sql_list):
-        """
-        批量执行SQL（事务）
-        :param sql_list: SQL列表，每个元素为(sql, params)元组
-        :return: 是否成功
-        """
+
         with Database.get_cursor(commit=True) as cursor:
             for sql, params in sql_list:
                 cursor.execute(sql, params or ())

@@ -1,5 +1,3 @@
-// 22306订票系统 - 通用JavaScript函数
-
 // API基础URL
 const API_BASE = '/api';
 

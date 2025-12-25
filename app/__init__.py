@@ -15,16 +15,12 @@ def create_app():
     """创建Flask应用"""
     app = Flask(__name__)
     
-    # 加载配置
     app.config.from_object(Config)
     
-    # 初始化数据库连接池
     Database.init_pool()
     
-    # 启用CORS
     CORS(app, supports_credentials=True)
     
-    # 注册蓝图
     app.register_blueprint(auth_bp)
     app.register_blueprint(ticket_bp)
     app.register_blueprint(admin_bp)
